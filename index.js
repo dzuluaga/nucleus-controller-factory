@@ -4,6 +4,7 @@
 
 function controllerFactory( options ){
   var messages = options.messages;
+  var utils = options.utils;//require('../helpers/utils');
   function setControllers( options ) {
     options.controllers.forEach( function( option ) {
       option.router = options.router;
