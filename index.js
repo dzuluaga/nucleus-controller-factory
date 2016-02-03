@@ -1,6 +1,6 @@
 "use strict";
 
-//var utils = require('../helpers/utils');
+var debug = require('debug')('controllerFactory');
 
 function controllerFactory( options ){
   var messages = options.messages;
@@ -8,9 +8,10 @@ function controllerFactory( options ){
   function setControllers( options ) {
     options.controllers.forEach( function( option ) {
       option.router = options.router;
-      option.router = option.resourceType( option );
+      option.models = options.models;
+      option.resourceType( option );
     } );
-    options.router.path = options.path;
+    //options.router.path = options.path;
     return options.router;
   }
 
@@ -19,7 +20,11 @@ function controllerFactory( options ){
   */
   function mainResource( options ) {
     options.router[ options.verb ]( options.path , function(req, res) {
-      var where = utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, {} );
+      //debug ( req.security );
+      var where = extractParams( options, req, utils, messages );
+      //var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) )
+      debug( 'WHERE', where );
+//      var where = utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, {} );
       if( req.query.describe && req.query.describe === 'true' ){ // returns table description
         options.model.describe()
             .then( function( describe ){
@@ -32,7 +37,7 @@ function controllerFactory( options ){
               offset: req.query.offset || 0,
               limit: utils.getLimit( req.query.limit ),
               order: req.query.order || [],
-              include:  utils.getIncludes( req.query.include )
+              include:  utils.getIncludes( options.models/*utils.getModels*/, req.query.include )
             })
             .then( function( items ){
               res.json( items );
@@ -42,7 +47,7 @@ function controllerFactory( options ){
             });
       }
     });
-    return options.router;
+    //return options.router;
   }
 
   /*
@@ -50,15 +55,15 @@ function controllerFactory( options ){
   */
   function subResource( options ) {
     options.router[ options.verb ]( options.path, function(req, res) {
-      var _where = extractParams( options, req );
-      var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) )
+      var where = extractParams( options, req, utils, messages );
+      //var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) )
       options.model[ options.cardinality ]({
         where: where,
         attributes: utils.tryToParseJSON(req.query.attributes, messages.PARSE_ERROR_ATTRIBUTE_PARAM, options.model.listAttributes),
         offset: req.query.offset || 0,
         limit: utils.getLimit( req.query.limit ),
         order: req.query.order || [],
-        include: utils.getIncludes( req.query.include )
+        include: utils.getIncludes( options.models/*utils.getModels*/, req.query.include )
       })
           .then(function( resource ) {
             if( !resource ) res.json(404, {code: 404, message: "Resource not found."})
@@ -81,9 +86,9 @@ function controllerFactory( options ){
 /*
 * Dynamically generates where object with attributes from the request object
  */
-function extractParams( options, req ){
+function extractParams( options, req, utils, messages ){
   var _where = { };
-  options.whereAttributes.forEach( function( attr ) {
+  ( options.whereAttributes || [] ).forEach( function( attr ) {
     var operator = attr.operator || "$eq";
     _where[ attr.attributeName ] = { };
     var value = req.params[ attr.paramName ];
@@ -93,7 +98,8 @@ function extractParams( options, req ){
     }
     _where[ attr.attributeName ][operator] = value;//req.params[ attr.paramName ];
   } );
-  return _where;
+  var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) )
+  return where;
 }
 
 module.exports = controllerFactory;
