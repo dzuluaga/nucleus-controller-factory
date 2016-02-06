@@ -55,37 +55,8 @@ function routerFactory( options ){
     }
   };
 
-  /*
-  * subResource does not support table describe query parameter.
-  */
-/*  function subResource( options ) {
-    options.router[ options.verb ]( options.path, function(req, res) {
-      var where = extractParams( options, req, utils, messages );
-      options.model[ options.cardinality ]({
-        where: where,
-        attributes: utils.tryToParseJSON(req.query.attributes, messages.PARSE_ERROR_ATTRIBUTE_PARAM, options.model.listAttributes),
-        offset: req.query.offset || 0,
-        limit: utils.getLimit( req.query.limit ),
-        order: req.query.order || [],
-        include: utils.getIncludes( options.models, req.query.include )
-      })
-          .then(function( resource ) {
-            if( !resource || resource.length == 0 ) res.json(404, {code: 404, message: "Resource not found."})
-            else res.json( resource );
-          })
-          .catch( function( error ){
-            utils.sendError( 500, error, req, res );
-          }) ;
-    });
-    return options.router;
-  }*/
-
   return {
     setControllers: setControllers,
-/*
-    mainResource: mainResource,
-    subResource: subResource
-*/
   }
 }
 
@@ -94,6 +65,7 @@ function routerFactory( options ){
  */
 function extractParams( options, req, utils, messages ){
   var _where = { };
+  debug('extractParams', options.whereAttributes);
   ( options.whereAttributes || [] ).forEach( function( attr ) {
     var operator = attr.operator || "$eq";
     _where[ attr.attributeName ] = { };
@@ -105,19 +77,22 @@ function extractParams( options, req, utils, messages ){
     _where[ attr.attributeName ][operator] = value;//req.params[ attr.paramName ];
   } );
   var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) );
-  where = applySecurity(  req.security.account_list, where );
-  debug('extractParams', where);
+  debug('extractParams_before_merged', where);
+  where = options.model.sequelize.Utils._.merge( where, applySecurity(  options, req.security.account_list, where ) );
+  debug('extractParams_merged', where);
   return where;
 }
 
-function applySecurity( account_list, where ) {
+function applySecurity( options, account_list, where ) {
+  debug('applySecurity', options.securityAttributeName);
   debug('applySecurity', account_list);
+  var _where = {}
   if( account_list && account_list.length > 0 && account_list[0] !== '*' ){
-    where['account_id'] = { $in: account_list };
+    _where[ options.securityAttributeName || 'account_id' ] = { $in: account_list };
   } else if( !account_list ){
     throw new Error("User Credentials require user account mapping.");
   }
-  return where;
+  return _where;
 }
 
 module.exports = routerFactory;
