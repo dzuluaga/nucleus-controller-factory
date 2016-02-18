@@ -1,34 +1,29 @@
 "use strict";
 
-var debug = require('debug')('controllerFactory');
+var debug = require('debug')('routerFactory');
 
-function routerFactory( options ){
-  var messages = options.messages;
-  var utils = options.utils;//require('../helpers/utils');
+function routerFactory(){
   function setControllers( options ) {
-    var middlewareFunctions = {};
-    options.controllers.forEach( function( option ) {
-      option.router = options.router;
-      option.models = options.models;
-      //option.resourceType( option );
-      var mwFunction = middleware ( option );
-      option.router[ option.verb ]( option.path, mwFunction);
-      //return option.router;
+    var router = options.router;
+    options.routers.forEach( function( routerSpec ) {
+      var mwFunction = middleware ( routerSpec, options );
+      router[ routerSpec.verb ]( routerSpec.path, mwFunction);
     } );
-    //options.router.path = options.path;
     return options.router;
   }
 
   /*
   * The main difference between mainResource and subResource is support for table describe (query parameter)
   */
-  function middleware( option ) {
-    return middlewareBuilder.bind( { option: option } );
+  function middleware( routerSpec, options ) {
+    return middlewareBuilder.bind( { routerSpec: routerSpec, options: options } );
   }
 
   function middlewareBuilder( req, res ) {
-    var options = this.option;
-    var where = extractParams( options, req, utils, messages );
+    var routerSpec = this.routerSpec;
+    var where = extractParams( routerSpec, req, this.options );
+    var utils = this.options.utils;
+    var model = utils.models[ routerSpec.model ];
     debug( 'WHERE', where );
     if( req.query.describe && req.query.describe === 'true' ){ // returns table description
       res.json( {"message": "not implemented yet"} );
@@ -37,13 +32,13 @@ function routerFactory( options ){
        res.json( describe );
        } )*/
     } else{
-      options.model[ options.cardinality ]( {
+      model[ routerSpec.cardinality ]( {
         where: where,
-        attributes: utils.tryToParseJSON( req.query.attributes, messages.PARSE_ERROR_ATTRIBUTE_PARAM, options.model.listAttributes),
+        attributes: utils.tryToParseJSON( req.query.attributes, utils.messages.PARSE_ERROR_ATTRIBUTE_PARAM, model.listAttributes),
         offset: req.query.offset || 0,
         limit: utils.getLimit( req.query.limit ),
         order: req.query.order || [],
-        include:  utils.getIncludes( options.models, req.query.include )
+        include:  utils.getIncludes( utils.models, req.query.include )
       } )
           .then( function( items ){
             if( !items || items.length == 0 ) res.status(404).json( { code: "404", message: "Resource not found." } );
@@ -56,17 +51,18 @@ function routerFactory( options ){
   };
 
   return {
-    setControllers: setControllers,
+    setControllers: setControllers
   }
 }
 
 /*
 * Dynamically generates where object with attributes from the request object
  */
-function extractParams( options, req, utils, messages ){
+function extractParams( routeSpec, req, options ){
   var _where = { };
-  debug('extractParams', options.whereAttributes);
-  ( options.whereAttributes || [] ).forEach( function( attr ) {
+  var utils = options.utils;
+  debug('extractParams', routeSpec.whereAttributes);
+  ( routeSpec.whereAttributes || [] ).forEach( function( attr ) {
     var operator = attr.operator || "$eq";
     _where[ attr.attributeName ] = { };
     var value = req.params[ attr.paramName ];
@@ -76,9 +72,9 @@ function extractParams( options, req, utils, messages ){
     }
     _where[ attr.attributeName ][operator] = value;//req.params[ attr.paramName ];
   } );
-  var where = options.model.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, messages.PARSE_ERROR_WHERE_PARAM, null ) );
+  var where = utils.db_connections.sequelize.Utils._.merge( _where, utils.tryToParseJSON( req.query.where, utils.messages.PARSE_ERROR_WHERE_PARAM, null ) );
   debug('extractParams_before_merged', where);
-  where = options.model.sequelize.Utils._.merge( where, applySecurity(  options, req.security.account_list, where ) );
+  where = utils.db_connections.sequelize.Utils._.merge( where, applySecurity(  routeSpec, req.security.account_list, where ) );
   debug('extractParams_merged', where);
   return where;
 }
